@@ -16,5 +16,5 @@ module.exports = (sequelize, DataTypes) => {
     CartItems.belongsTo(models.Products, {foreignKey: "productId", onDelete: "CASCADE"})
   }
 
-  return CartItems
+  return CartItems;
 }

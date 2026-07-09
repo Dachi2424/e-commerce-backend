@@ -62,7 +62,7 @@ module.exports = (sequelize, DataTypes) => {
 
 
   Users.associate = (models) => {
-    Users.hasMany(models.Comments, { onDelete: "CASCADE", foreignKey: "userId"});
+    
     Users.hasMany(models.CartItems, {onDelete: "CASCADE", foreignKey: "userId"});
     Users.hasMany(models.Orders, {onDelete: "CASCADE", foreignKey: "userId"});
     Users.hasMany(models.RefreshToken, {onDelete: "CASCADE", foreignKey: "userId"});

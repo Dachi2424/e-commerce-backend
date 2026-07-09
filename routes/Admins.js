@@ -2,15 +2,15 @@ const express = require("express")
 const router = express.Router()
 const verifyToken = require("../middlewares/verifyToken")
 const requireAdmin = require("../middlewares/requireAdmin")
-const {Users, Products, Comments, Orders} = require("../models")
+const {Users, Products, Orders} = require("../models")
 
 // create a product
 router.post("/products", verifyToken, requireAdmin, async (req, res) => {
   try{
     const {name, description, price, stock, category, imageUrl} = req.body
 
-    if(!stock || stock < 1){
-      return res.status(400).json({error: "Stock must be at least 1"})
+    if(stock === undefined || stock === null || stock < 0){
+      return res.status(400).json({error: "Stock cannot be negative"})
     }
 
     const newData = await Products.create({
@@ -21,7 +21,7 @@ router.post("/products", verifyToken, requireAdmin, async (req, res) => {
       category,
       imageUrl
     });
-    res.status(201).json({message: "Product created successfully!"})
+    res.status(201).json({message: "Product created successfully!", product: newData})
   } catch(err){
     if(err.name === "SequelizeValidationError"){
       return res.status(400).json({error: err.message})
@@ -35,13 +35,16 @@ router.post("/products", verifyToken, requireAdmin, async (req, res) => {
 router.patch("/products/:id", verifyToken, requireAdmin, async (req, res) => {
   try{
     const {id} = req.params
+    const {name, description, price, stock, category, imageUrl} = req.body
+    if(!Number.isInteger(+id)){
+      return res.status(400).json({error: "Invalid product ID"})
+    }
     const product = await Products.findByPk(id)
     if(!product){
       return res.status(404).json({error: "No product was found"})
     }
 
-    await product.update(req.body)
-
+    await product.update({name, description, price, stock, category, imageUrl})
     res.status(200).json(product)
   } catch(err){
     if(err.name === "SequelizeValidationError"){
@@ -56,33 +59,16 @@ router.patch("/products/:id", verifyToken, requireAdmin, async (req, res) => {
 router.delete("/products/:id", verifyToken, requireAdmin, async (req, res) => {
   try{
     const {id} = req.params
+    if(!Number.isInteger(+id)){
+      return res.status(400).json({error: "Invalid product ID"})
+    }
     const product = await Products.findByPk(id)
     if(!product){
       return res.status(404).json({error: "Product not found"})
     }
 
     await product.destroy()
-
     res.status(200).json({message: "Product deleted successfully"})
-  } catch(err){
-    res.status(500).json({error: err.message})
-  }
-})
-
-
-// delete a comment
-router.delete("/comments/:id", verifyToken, requireAdmin, async (req, res) => {
-  try{
-    const {id} = req.params
-
-    const comment = await Comments.findByPk(id)
-    if(!comment){
-      return res.status(404).json({error: "Comment not found"})
-    }
-
-    await comment.destroy()
-    res.status(200).json({message: "Comment was deleted"})
-
   } catch(err){
     res.status(500).json({error: err.message})
   }

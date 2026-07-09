@@ -33,27 +33,23 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: false,
       validate: {
-        notNull: {msg: "Category not specified"}
+        notNull: {msg: "Category not specified"},
+        isIn: {
+          args: [["laptop", "phone", "tablet", "pc", "monitor", "keyboard", "console"]],
+          msg: "Invalid category"
+        }
       }
     },
     imageUrl: {
       type: DataTypes.JSON,
       defaultValue: [],
       allowNull: true
-    },
-    rating: {
-      type: DataTypes.DECIMAL(2, 1),
-      defaultValue: 0
-    },
-    reviewCount: {
-      type: DataTypes.INTEGER,
-      defaultValue: 0
     }
   })
 
 
   Products.associate = (models) => {
-    Products.hasMany(models.Comments, {onDelete: "CASCADE", foreignKey: "productId"});
+    
     Products.hasMany(models.CartItems, {onDelete: "CASCADE", foreignKey: "productId"});
     Products.hasMany(models.OrderItems, {onDelete: "SET NULL", foreignKey: "productId"});
   }
