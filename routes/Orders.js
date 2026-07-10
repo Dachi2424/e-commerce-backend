@@ -1,49 +1,131 @@
-const express = require("express")
-const router =  express.Router()
-const verifyToken = require("../middlewares/verifyToken")
-const {Orders, OrderItems, CartItems, Products, sequelize} = require("../models")
-const Stripe = require("stripe")
-const stripe = Stripe(process.env.STRIPE_SECRET_KEY)
+const express = require("express");
+const router = express.Router();
+const verifyToken = require("../middlewares/verifyToken");
+const { Orders, OrderItems, CartItems, Products } = require("../models");
+const stripe = require("../config/stripe");
 
 
-
-// STEP 1: Create a PaymentIntent (call this before checkout)
-// Frontend calls this to get a clientSecret for Stripe.js
 router.post("/create-payment-intent", verifyToken, async (req, res) => {
-  try{
-    const userId = req.user.id
+  try {
+    const userId = req.user.id;
 
     const cartItems = await CartItems.findAll({
       where: { userId },
-      include: [{ model: Products }]
-    })
+      include: [{ model: Products }],
+    });
 
-    if(cartItems.length === 0){
-      return res.status(404).json({ error: "Cart is empty" })
+    if (cartItems.length === 0) {
+      return res.status(400).json({ error: "Your cart is empty" });
     }
 
-    const totalPrice = cartItems.reduce((acc, item) => {
-      return acc + Number(item.Product.price * item.quantity)
-    }, 0)
+    let totalPrice = 0;
+    const cartSnapshot = [];
 
     for (const item of cartItems) {
-      if (item.Product.stock < item.quantity) {
-        return res.status(400).json({ error: `Insufficient stock for "${item.Product.name}"` })
+      if (!item.Products) {
+        return res.status(400).json({ error: "One of the products in your cart no longer exists" });
       }
+      if (item.quantity > item.Products.stock) {
+        return res.status(400).json({error: `Only ${item.Products.stock} of "${item.Products.name}" in stock`});
+      }
+      totalPrice += Number(item.Products.price) * item.quantity;
+      cartSnapshot.push({
+        productId: item.Products.id,
+        quantity: item.quantity,
+      });
     }
 
-    // Stripe expects amount in the smallest currency unit (cents)
+    const amountInCents = Math.round(totalPrice * 100);
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(totalPrice * 100),
+      amount: amountInCents,
       currency: "usd",
-      metadata: { userId: String(userId) }
+      metadata: {
+        userId: String(userId),
+        cart: JSON.stringify(cartSnapshot),
+      },
+    });
+
+    res.status(200).json({ clientSecret: paymentIntent.client_secret });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// webhook 
+// the webhook receives POST request from stripe once the payment is successful.
+router.post("/webhook", async (req, res) => {
+  let event;
+  try {
+    const signature = req.headers["stripe-signature"];
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET,
+    );
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook signature verification failed: ${err.message}` });
+  }
+
+  if (event.type !== "payment_intent.succeeded") {
+    return res.status(200).json({ received: true });
+  }
+
+  const paymentIntent = event.data.object;
+
+  try {
+    const existingOrder = await Orders.findOne({
+      where: { stripePaymentIntentId: paymentIntent.id },
+    });
+    if (existingOrder) {
+      return res.status(200).json({ received: true });
+    }
+
+    const userId = paymentIntent.metadata.userId;
+    const cartSnapshot = JSON.parse(paymentIntent.metadata.cart);
+
+    const order = await Orders.create({
+      userId,
+      totalPrice: paymentIntent.amount / 100,
+      status: "paid",
+      stripePaymentIntentId: paymentIntent.id,
+    });
+
+    for (const item of cartSnapshot) {
+      const product = await Products.findByPk(item.productId);
+      if (!product) continue;
+
+      await OrderItems.create({
+        orderId: order.id,
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        priceAtPurchase: product.price,
+      });
+
+      await product.update({ stock: product.stock - item.quantity });
+    }
+
+    await CartItems.destroy({ where: { userId } });
+
+    res.status(200).json({ received: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// get every order's history
+router.get("/", verifyToken, async (req, res) => {
+  try{
+    const userId = req.user.id
+
+    const orders = await Orders.findAll({
+      where: {userId},
+      include: [{model: OrderItems}]
     })
 
-    res.status(200).json({
-      clientSecret: paymentIntent.client_secret,
-      paymentIntentId: paymentIntent.id,
-      totalPrice
-    })
+    res.status(200).json(orders)
 
   } catch(err){
     res.status(500).json({error: err.message})
@@ -51,156 +133,63 @@ router.post("/create-payment-intent", verifyToken, async (req, res) => {
 })
 
 
-
-
-
-
-// STEP 2: Confirm order after Stripe payment succeeds on the frontend
-// Frontend calls this with the paymentIntentId once payment is confirmed
-router.post("/", verifyToken, async (req, res) => {
+// get specific order's history
+router.get("/:id", verifyToken, async (req, res) => {
   try{
     const userId = req.user.id
-    const { paymentIntentId } = req.body
-    if(!paymentIntentId){
-      return res.status(400).json({ error: "paymentIntentId is required" })
-    }
-    // Verify the payment actually succeeded with Stripe
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
-    if(paymentIntent.status !== "succeeded"){
-      return res.status(400).json({ error: "Payment has not been completed" })
+    const {id} = req.params
+    if(!Number.isInteger(+id)){
+      return res.status(400).json({error: "Order ID must be a number"})
     }
 
-    if(paymentIntent.metadata.userId !== String(userId)) {
-      return res.status(403).json({ error: "Payment intent does not belong to this user" })
-    }
-
-    // Guard against replaying the same paymentIntentId
-    const existing = await Orders.findOne({
-      where: { stripePaymentIntentId: paymentIntentId}
+    const detailedOrder = await Orders.findOne({
+      where: {id, userId},
+      include: [{model: OrderItems}]
     })
-    if(existing){
-      return res.status(409).json({ error: "Order already created for this payment" })
+
+    if(!detailedOrder){
+      return res.status(404).json({error: "The order was not found"})
     }
-    const cartItems = await CartItems.findAll({
-      where: {userId},
-      include: [{ model: Products }]
-    })
-    if(cartItems.length === 0){
-      return res.status(404).json({ error: "Cart is empty" })
+
+    res.status(200).json(detailedOrder)
+
+  } catch(err){
+    res.status(500).json({error: err.message})
+  }
+})
+
+
+// cancel order
+router.patch("/cancel/:id", verifyToken, async (req, res) => {
+  try{
+    const userId = req.user.id
+    const {id} = req.params
+    if(!Number.isInteger(+id)){
+      return res.status(400).json({error: "Order ID must be a number"})
     }
-    const totalPrice = cartItems.reduce((acc, item) => {
-      return acc + (item.Product.price * item.quantity)
-    }, 0)
 
-    await sequelize.transaction(async (t) => {
-      const order = await Orders.create({
-        userId,
-        totalPrice,
-        status: "paid",
-        paymentMethod: paymentIntent.payment_method_types?.[0] ?? "card",
-        stripePaymentIntentId: paymentIntentId
-      }, {transaction: t})
-    
-      for (const item of cartItems) {
-        if(item.Product.stock < item.quantity){
-          throw new Error(`Insufficient stock for "${item.Product.name}"`)
-        }
-        await OrderItems.create({
-          quantity: item.quantity,
-          priceAtPurchase: item.Product.price,
-          orderId: order.id,
-          productId: item.Product.id
-        }, {transaction: t})
-        await item.Product.decrement("stock", { by: item.quantity, transaction: t })
-      }
+    const order = await Orders.findOne({where: {id, userId}})
+    if(!order){
+      return res.status(404).json({error: "The order was not found"})
+    }
 
-      await CartItems.destroy({ where: { userId }, transaction: t })
+    if(order.status === "paid"){
+      order.status = "cancelled"
+      await order.save()
+      return res.status(200).json({message: "The order was cancelled", order})
+    } else{
+      return res.status(400).json({error: "Cannot cancel shipped or delivered product"})
+    }
 
-      res.status(201).json(order)
-    
-    })    
   } catch(err){
     if(err.name === "SequelizeValidationError"){
-      return res.status(400).json({ error: err.message })
+      return res.status(400).json({error: err.message})
     }
-    res.status(500).json({ error: err.message })
+    res.status(500).json({error: err.message})
   }
 })
 
 
+//  if(order.status === "shipped" || order.status === "delivered")
 
-
-
-
-// GET /orders — order history (unchanged)
-router.get("/", verifyToken, async (req, res) => {
-  try {
-    const userId = req.user.id
-    const orderList = await Orders.findAll({
-      where: { userId },
-      include: [{ model: OrderItems, include: [{ model: Products }] }]
-    })
-    res.status(200).json(orderList)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
-
-
-
-
-
-// GET /orders/:orderId — specific order (unchanged)
-router.get("/:orderId", verifyToken, async (req, res) => {
-  try {
-    const { orderId } = req.params
-    const userId = req.user.id
-    const order = await Orders.findOne({
-      where: { userId, id: orderId },
-      include: [{ model: OrderItems, include: [{ model: Products }] }]
-    })
-    if (!order) return res.status(404).json({ error: "Order not found" })
-    res.status(200).json(order)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
-
-
-
-
-
-// PATCH /orders/:orderId — cancel order (unchanged)
-router.patch("/:orderId", verifyToken, async (req, res) => {
-  try {
-    const userId = req.user.id
-    const { orderId } = req.params
-    const order = await Orders.findOne({
-      where: { userId, id: orderId },
-      include: [{ model: OrderItems }]
-    })
-    if (!order) return res.status(404).json({ error: "Order not found" })
-    if (order.status !== "paid") {
-      return res.status(400).json({ error: "This order cannot be cancelled anymore" })
-    }
-
-
-    await sequelize.transaction(async (t) => {
-      await order.update({ status: "cancelled" }, { transaction: t })
-
-      for (const item of order.OrderItems) {
-        await Products.increment("stock", { by: item.quantity, where: { id: item.productId }, transaction: t })
-      }
-    })
-    res.status(200).json({ message: "The order was cancelled" })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
-
-
-
-module.exports = router
+module.exports = router;

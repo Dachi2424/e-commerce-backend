@@ -9,7 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     status: {
-      type: DataTypes.ENUM("paid", "processing", "shipped", "delivered", "cancelled"),
+      type: DataTypes.ENUM("paid", "shipped", "delivered", "cancelled"),
       defaultValue: "paid"
     },
     paymentMethod: {
@@ -18,7 +18,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     stripePaymentIntentId: {
       type: DataTypes.STRING,
-      allowNull: true,
+      allowNull: false,
       unique: true
     }
   })

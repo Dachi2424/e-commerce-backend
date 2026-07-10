@@ -9,6 +9,7 @@ app.use(cors({
   origin: "http://localhost:5173",
   credentials: true
 }))
+app.use("/orders/webhook", express.raw({ type: "application/json" }))
 app.use(express.json())
 
 
@@ -22,8 +23,6 @@ const cartRoutes = require("./routes/CartItems")
 app.use("/cart", cartRoutes)
 const orderRoutes = require("./routes/Orders")
 app.use("/orders", orderRoutes)
-
-
 
 
 

@@ -4,6 +4,7 @@ const verifyToken = require("../middlewares/verifyToken")
 const requireAdmin = require("../middlewares/requireAdmin")
 const {Users, Products, Orders} = require("../models")
 
+
 // create a product
 router.post("/products", verifyToken, requireAdmin, async (req, res) => {
   try{
@@ -11,6 +12,10 @@ router.post("/products", verifyToken, requireAdmin, async (req, res) => {
 
     if(stock === undefined || stock === null || stock < 0){
       return res.status(400).json({error: "Stock cannot be negative"})
+    }
+
+    if(price <= 0 || price === null || price === undefined){
+      return res.status(400).json({error: "Price must be a positive number"})
     }
 
     const newData = await Products.create({
@@ -78,18 +83,21 @@ router.delete("/products/:id", verifyToken, requireAdmin, async (req, res) => {
 // update order status
 router.patch("/orders/:orderId", verifyToken, requireAdmin, async (req, res) => {
   try{
-    const data = req.body
+    const {status} = req.body
     const {orderId} = req.params
+    const validStatusses = ["paid", "shipped", "delivered", "cancelled"]
 
-    const order = await Orders.findOne({
-      where: {id: orderId}
-    })
-    if(!order){
-      return res.status(404).json({error: "No order found"})
+    if(!validStatusses.includes(status)){
+      return res.status(400).json({error: "Invalid status. status must be one of the following: paid, shipped, delivered, or cancelled"})
     }
 
-    await order.update({status: data.status})
-    res.status(200).json({message: "Order status updated successfully"})
+    const order = await Orders.findByPk(orderId)
+    if(!order){
+      return res.status(404).json({error: "The order was not found"})
+    }
+
+    await order.update({status: status})
+    return res.status(200).json({message: "Status applied successfully"})
 
   } catch(err){
     if(err.name === "SequelizeValidationError"){
@@ -98,10 +106,6 @@ router.patch("/orders/:orderId", verifyToken, requireAdmin, async (req, res) => 
     res.status(500).json({error: err.message})
   }
 })
-
-
-
-
 
 
 module.exports = router

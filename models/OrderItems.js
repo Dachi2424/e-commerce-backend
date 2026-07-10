@@ -8,6 +8,10 @@ module.exports = (sequelize, DataTypes) => {
         isInt: {msg: "Quantity must be a whole number"}
       }
     },
+    productName: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
     priceAtPurchase: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
