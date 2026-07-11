@@ -31,7 +31,7 @@ app.use("/orders", orderRoutes)
 
 
 const db = require("./models")
-db.sequelize.sync({force: true}).then(() => {
+db.sequelize.sync().then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`)
   })  
