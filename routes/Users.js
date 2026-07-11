@@ -224,6 +224,9 @@ router.patch("/change-data", verifyToken, async (req, res) => {
     })
 
   } catch(err){
+    if(err.name === "SequelizeValidationError" || err.name === "SequelizeUniqueConstraintError"){
+      return res.status(400).json({error: err.message})
+    }
     res.status(500).json({error: err.message})
   }
 })
@@ -239,7 +242,7 @@ router.delete("/logout", verifyToken, async (req, res) => {
     }
 
     const hashedToken = crypto.createHash("sha256").update(refreshToken).digest("hex")
-    const matchingDbToken = await RefreshToken.findOne({where: {token: hashedToken}})
+    const matchingDbToken = await RefreshToken.findOne({where: {token: hashedToken, userId}})
     if(!matchingDbToken){
       return res.status(404).json({error: "Token not found in database"})
     }

@@ -2,7 +2,7 @@ const express = require("express")
 const router = express.Router()
 const verifyToken = require("../middlewares/verifyToken")
 const requireAdmin = require("../middlewares/requireAdmin")
-const {Users, Products, Orders} = require("../models")
+const {Products, Orders} = require("../models")
 
 
 // create a product
@@ -10,19 +10,11 @@ router.post("/products", verifyToken, requireAdmin, async (req, res) => {
   try{
     const {name, description, price, stock, category, imageUrl} = req.body
 
-    if(stock === undefined || stock === null || stock < 0){
-      return res.status(400).json({error: "Stock cannot be negative"})
-    }
-
-    if(price <= 0 || price === null || price === undefined){
-      return res.status(400).json({error: "Price must be a positive number"})
-    }
-
     const newData = await Products.create({
       name,
       description,
       price,
-      stock, 
+      stock,
       category,
       imageUrl
     });
@@ -82,6 +74,13 @@ router.delete("/products/:id", verifyToken, requireAdmin, async (req, res) => {
 
 // update order status
 router.patch("/orders/:orderId", verifyToken, requireAdmin, async (req, res) => {
+  const allowedTransitions = {
+    paid: ["shipped", "cancelled"],
+    shipped: ["delivered"],
+    delivered: [],
+    cancelled: []
+  }
+
   try{
     const {status} = req.body
     const {orderId} = req.params
@@ -94,6 +93,10 @@ router.patch("/orders/:orderId", verifyToken, requireAdmin, async (req, res) => 
     const order = await Orders.findByPk(orderId)
     if(!order){
       return res.status(404).json({error: "The order was not found"})
+    }
+
+    if(!allowedTransitions[order.status].includes(status)){
+      return res.status(400).json({error: `Cannot change status from "${order.status}" to "${status}"`})
     }
 
     await order.update({status: status})

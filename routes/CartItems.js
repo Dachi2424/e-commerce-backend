@@ -8,7 +8,7 @@ const {CartItems, Products} = require("../models")
 router.post("/:productId", verifyToken, async (req, res) => {
   try{
     const {productId} = req.params
-    const {quantity} = req.body
+    const quantity = Number(req.body.quantity)
     const userId = req.user.id
 
     if(!Number.isInteger(+productId)){
@@ -77,7 +77,7 @@ router.get("/", verifyToken, async(req, res) => {
 router.patch("/:productId", verifyToken, async (req, res) => {
   try{
     const userId = req.user.id
-    const {quantity} = req.body
+    const quantity = Number(req.body.quantity)
     const {productId} = req.params
     if(!Number.isInteger(+quantity) || quantity < 1){
       return res.status(400).json({error: "Quantity must be a positive whole number"})

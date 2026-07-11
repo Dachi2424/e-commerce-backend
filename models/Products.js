@@ -16,7 +16,6 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       validate: {
-        notEmpty: {msg: "Product price cannot be empty"},
         isDecimal: {msg: "Price must be a number"},
         min: { args: [0], msg: "Price must be positive"}
       }

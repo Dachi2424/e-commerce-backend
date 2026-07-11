@@ -9,8 +9,12 @@ app.use(cors({
   origin: "http://localhost:5173",
   credentials: true
 }))
+
 app.use("/orders/webhook", express.raw({ type: "application/json" }))
-app.use(express.json())
+app.use((req, res, next) => {
+  if (req.path === "/orders/webhook") return next()
+  express.json()(req, res, next)
+})
 
 
 const userRoutes = require("./routes/Users")
