@@ -1,13 +1,13 @@
 const express = require("express")
 const router = express.Router()
-const {Products} = require("../models")
+const {Products, sequelize} = require("../models")
 const { Op } = require("sequelize")
 
 
 //get products
-router.get("/", async (req, res) => {
+router.get("/", async (req, res, next) => {
   try{
-    const {minPrice, maxPrice, category, search, inStock, page, limit, sort} = req.query
+    const {minPrice, maxPrice, category, search, inStock, specs, page, limit, sort} = req.query
     const min = minPrice !== undefined ? Number(minPrice) : undefined
     const max = maxPrice !== undefined ? Number(maxPrice) : undefined
 
@@ -16,6 +16,7 @@ router.get("/", async (req, res) => {
     }
 
     const where = {}
+    const andConditions = []
 
     if (category && category !== "false") {
       const categories = Array.isArray(category) ? category : [category]
@@ -30,6 +31,21 @@ router.get("/", async (req, res) => {
       }
     }
 
+    // spec filters
+    if (specs && typeof specs === "object"){
+      for (const [key, value] of Object.entries(specs)) {
+        andConditions.push(
+          sequelize.where(sequelize.json(`specifications.${key}`), value)
+        )
+      }
+    }
+
+    if (andConditions.length > 0) {
+      where[Op.and] = andConditions
+    }
+
+
+
     const currentPage = Math.max(1, +page || 1)
     const pageSize = Math.min(100, Math.max(1, +limit || 24))
     const offset = (currentPage - 1) * pageSize
@@ -38,13 +54,13 @@ router.get("/", async (req, res) => {
     const products = await Products.findAll({where, limit: pageSize, offset, order})
     res.status(200).json(products)
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // get detailed product
-router.get("/:id", async(req, res) => {
+router.get("/:id", async(req, res, next) => {
   try{
     const {id} = req.params
     if(!Number.isInteger(+id)) {
@@ -56,12 +72,9 @@ router.get("/:id", async(req, res) => {
     }
     res.status(200).json(product)
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
-
-
-
 
 
 

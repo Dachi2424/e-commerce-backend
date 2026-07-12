@@ -5,7 +5,7 @@ const {CartItems, Products} = require("../models")
 
 
 // add to cart
-router.post("/:productId", verifyToken, async (req, res) => {
+router.post("/:productId", verifyToken, async (req, res, next) => {
   try{
     const {productId} = req.params
     const quantity = Number(req.body.quantity)
@@ -49,16 +49,13 @@ router.post("/:productId", verifyToken, async (req, res) => {
 
     res.status(201).json({message: "Added to cart", cartItem})
   } catch(err){
-    if(err.name === "SequelizeValidationError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // get cart
-router.get("/", verifyToken, async(req, res) => {
+router.get("/", verifyToken, async(req, res, next) => {
   try{
     const userId = req.user.id
     const cart = await CartItems.findAll({
@@ -68,13 +65,13 @@ router.get("/", verifyToken, async(req, res) => {
     })
     res.status(200).json(cart)
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // update cartItem
-router.patch("/:productId", verifyToken, async (req, res) => {
+router.patch("/:productId", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
     const quantity = Number(req.body.quantity)
@@ -102,16 +99,13 @@ router.patch("/:productId", verifyToken, async (req, res) => {
     res.status(200).json({message: "Quantity successfully changed", cartItem})
 
   } catch(err){
-    if(err.name === "SequelizeValidationError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // delete the entire cart
-router.delete("/", verifyToken, async (req, res) => {
+router.delete("/", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
 
@@ -122,13 +116,13 @@ router.delete("/", verifyToken, async (req, res) => {
 
     res.status(200).json({message: "Cart cleared successfully"})
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // delete cart item
-router.delete("/:productId", verifyToken, async (req, res) => {
+router.delete("/:productId", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
     const {productId} = req.params
@@ -146,11 +140,9 @@ router.delete("/:productId", verifyToken, async (req, res) => {
     res.status(200).json({message: "Product removed from cart successfully!"})
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
-
-
 
 
 

@@ -28,10 +28,18 @@ app.use("/cart", cartRoutes)
 const orderRoutes = require("./routes/Orders")
 app.use("/orders", orderRoutes)
 
+app.use((err, req, res, next) => {
+  if(err.name === "SequelizeValidationError" || err.name === "SequelizeUniqueConstraintError"){
+    return res.status(400).json({error: err.message})
+  }
+  console.error(err)
+  res.status(500).json({error: "Something went wrong"})
+})
+
 
 
 const db = require("./models")
-db.sequelize.sync().then(() => {
+db.sequelize.sync({force: true}).then(() => {
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`)
   })  

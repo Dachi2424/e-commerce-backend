@@ -43,12 +43,16 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.JSON,
       defaultValue: [],
       allowNull: true
+    },
+    specifications: {
+      type: DataTypes.JSON,
+      defaultValue: {},
+      allowNull: true
     }
   })
 
 
   Products.associate = (models) => {
-    
     Products.hasMany(models.CartItems, {onDelete: "CASCADE", foreignKey: "productId"});
     Products.hasMany(models.OrderItems, {onDelete: "SET NULL", foreignKey: "productId"});
   }

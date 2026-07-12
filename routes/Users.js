@@ -1,5 +1,6 @@
 const express = require("express")
 const router = express.Router()
+const rateLimit = require("express-rate-limit")
 const bcrypt = require("bcrypt")
 const crypto = require("crypto")
 const jsonwebtoken = require("jsonwebtoken")
@@ -8,8 +9,25 @@ const alreadyLoggedIn = require("../middlewares/alreadyLoggedIn")
 const {Users, RefreshToken} = require("../models")
 
 
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: { error: "Too many accounts created from this IP, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many login attempts, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+
 // create-account
-router.post("/signup", alreadyLoggedIn, async (req, res) => {
+router.post("/signup", signupLimiter, alreadyLoggedIn, async (req, res, next) => {
   try{
     const {username, email, password} = req.body
     if(!username || !email || !password){
@@ -28,16 +46,13 @@ router.post("/signup", alreadyLoggedIn, async (req, res) => {
     })
 
   } catch(err){
-    if(err.name === "SequelizeValidationError" || err.name === "SequelizeUniqueConstraintError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // login
-router.post("/login", alreadyLoggedIn, async (req, res) => {
+router.post("/login", loginLimiter, alreadyLoggedIn, async (req, res, next) => {
   try{
     const {email, password} = req.body
     if(!email || !password){
@@ -88,13 +103,13 @@ router.post("/login", alreadyLoggedIn, async (req, res) => {
     res.status(200).json({message: "logged in"})
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // refresh token
-router.post("/refresh", async (req, res) => {
+router.post("/refresh", async (req, res, next) => {
   try{
     const refreshToken = req.cookies.refreshToken
     if(!refreshToken){
@@ -137,13 +152,13 @@ router.post("/refresh", async (req, res) => {
 
     res.status(200).json({message: "token refreshed"})
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // get user info
-router.get("/", verifyToken, async (req, res) => {
+router.get("/", verifyToken, async (req, res, next) => {
   try{  
     const userId = req.user.id
 
@@ -157,13 +172,13 @@ router.get("/", verifyToken, async (req, res) => {
     res.status(200).json(user)
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // change password
-router.patch("/change-password", verifyToken, async (req, res) => {
+router.patch("/change-password", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
     const {currentPassword, newPassword} = req.body
@@ -195,13 +210,13 @@ router.patch("/change-password", verifyToken, async (req, res) => {
     res.status(200).json({message: "Password changed successfully"})
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // change user data
-router.patch("/change-data", verifyToken, async (req, res) => {
+router.patch("/change-data", verifyToken, async (req, res, next) => {
   try{
     const {email, username, phone, idNumber} = req.body
     const userId = req.user.id
@@ -224,16 +239,13 @@ router.patch("/change-data", verifyToken, async (req, res) => {
     })
 
   } catch(err){
-    if(err.name === "SequelizeValidationError" || err.name === "SequelizeUniqueConstraintError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // log out
-router.delete("/logout", verifyToken, async (req, res) => {
+router.delete("/logout", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
     const refreshToken = req.cookies.refreshToken
@@ -252,13 +264,13 @@ router.delete("/logout", verifyToken, async (req, res) => {
     res.clearCookie("token")
     res.status(200).json({message: "Logged out successfully"})
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // log out from all devices
-router.delete("/logout-all", verifyToken, async (req, res) => {
+router.delete("/logout-all", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
 
@@ -269,13 +281,13 @@ router.delete("/logout-all", verifyToken, async (req, res) => {
     res.status(200).json({message: "logged out from all devices successfully"})
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // delete account
-router.delete("/delete-account", verifyToken, async (req, res) => {
+router.delete("/delete-account", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
 
@@ -290,7 +302,7 @@ router.delete("/delete-account", verifyToken, async (req, res) => {
     res.status(200).json({message: "Account deleted successfully"})
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 

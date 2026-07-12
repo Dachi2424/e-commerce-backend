@@ -6,9 +6,9 @@ const {Products, Orders} = require("../models")
 
 
 // create a product
-router.post("/products", verifyToken, requireAdmin, async (req, res) => {
+router.post("/products", verifyToken, requireAdmin, async (req, res, next) => {
   try{
-    const {name, description, price, stock, category, imageUrl} = req.body
+    const {name, description, price, stock, category, imageUrl, specifications} = req.body
 
     const newData = await Products.create({
       name,
@@ -16,23 +16,21 @@ router.post("/products", verifyToken, requireAdmin, async (req, res) => {
       price,
       stock,
       category,
-      imageUrl
+      imageUrl,
+      specifications
     });
     res.status(201).json({message: "Product created successfully!", product: newData})
   } catch(err){
-    if(err.name === "SequelizeValidationError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // edit a product
-router.patch("/products/:id", verifyToken, requireAdmin, async (req, res) => {
+router.patch("/products/:id", verifyToken, requireAdmin, async (req, res, next) => {
   try{
     const {id} = req.params
-    const {name, description, price, stock, category, imageUrl} = req.body
+    const {name, description, price, stock, category, imageUrl, specifications} = req.body
     if(!Number.isInteger(+id)){
       return res.status(400).json({error: "Invalid product ID"})
     }
@@ -41,19 +39,16 @@ router.patch("/products/:id", verifyToken, requireAdmin, async (req, res) => {
       return res.status(404).json({error: "No product was found"})
     }
 
-    await product.update({name, description, price, stock, category, imageUrl})
+    await product.update({name, description, price, stock, category, imageUrl, specifications})
     res.status(200).json(product)
   } catch(err){
-    if(err.name === "SequelizeValidationError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // delete a product
-router.delete("/products/:id", verifyToken, requireAdmin, async (req, res) => {
+router.delete("/products/:id", verifyToken, requireAdmin, async (req, res, next) => {
   try{
     const {id} = req.params
     if(!Number.isInteger(+id)){
@@ -67,13 +62,13 @@ router.delete("/products/:id", verifyToken, requireAdmin, async (req, res) => {
     await product.destroy()
     res.status(200).json({message: "Product deleted successfully"})
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // update order status
-router.patch("/orders/:orderId", verifyToken, requireAdmin, async (req, res) => {
+router.patch("/orders/:orderId", verifyToken, requireAdmin, async (req, res, next) => {
   const allowedTransitions = {
     paid: ["shipped", "cancelled"],
     shipped: ["delivered"],
@@ -103,10 +98,7 @@ router.patch("/orders/:orderId", verifyToken, requireAdmin, async (req, res) => 
     return res.status(200).json({message: "Status applied successfully"})
 
   } catch(err){
-    if(err.name === "SequelizeValidationError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 

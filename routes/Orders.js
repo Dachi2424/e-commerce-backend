@@ -1,11 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middlewares/verifyToken");
-const { Orders, OrderItems, CartItems, Products } = require("../models");
+const { Orders, OrderItems, CartItems, Products, sequelize } = require("../models");
 const stripe = require("../config/stripe");
 
 
-router.post("/create-payment-intent", verifyToken, async (req, res) => {
+router.post("/create-payment-intent", verifyToken, async (req, res, next) => {
   try {
     const userId = req.user.id;
 
@@ -48,13 +48,14 @@ router.post("/create-payment-intent", verifyToken, async (req, res) => {
 
     res.status(200).json({ clientSecret: paymentIntent.client_secret });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err)
   }
 });
 
+
 // webhook 
 // the webhook receives POST request from stripe once the payment is successful.
-router.post("/webhook", async (req, res) => {
+router.post("/webhook", async (req, res, next) => {
   let event;
   try {
     const signature = req.headers["stripe-signature"];
@@ -84,39 +85,46 @@ router.post("/webhook", async (req, res) => {
     const userId = paymentIntent.metadata.userId;
     const cartSnapshot = JSON.parse(paymentIntent.metadata.cart);
 
-    const order = await Orders.create({
-      userId,
-      totalPrice: paymentIntent.amount / 100,
-      status: "paid",
-      stripePaymentIntentId: paymentIntent.id,
-    });
+    const t = await sequelize.transaction();
+    try {
+      const order = await Orders.create({
+        userId,
+        totalPrice: paymentIntent.amount / 100,
+        status: "paid",
+        stripePaymentIntentId: paymentIntent.id,
+      }, { transaction: t });
 
-    for (const item of cartSnapshot) {
-      const product = await Products.findByPk(item.productId);
-      if (!product) continue;
+      for (const item of cartSnapshot) {
+        const product = await Products.findByPk(item.productId, { transaction: t });
+        if (!product) continue;
 
-      await OrderItems.create({
-        orderId: order.id,
-        productId: product.id,
-        productName: product.name,
-        quantity: item.quantity,
-        priceAtPurchase: product.price,
-      });
+        await OrderItems.create({
+          orderId: order.id,
+          productId: product.id,
+          productName: product.name,
+          quantity: item.quantity,
+          priceAtPurchase: product.price,
+        }, { transaction: t });
 
-      await product.update({ stock: product.stock - item.quantity });
+        await product.decrement("stock", { by: item.quantity, transaction: t });
+      }
+
+      await CartItems.destroy({ where: { userId }, transaction: t });
+      await t.commit();
+    } catch (err) {
+      await t.rollback();
+      throw err;
     }
-
-    await CartItems.destroy({ where: { userId } });
 
     res.status(200).json({ received: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err)
   }
 });
 
 
 // get every order's history
-router.get("/", verifyToken, async (req, res) => {
+router.get("/", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
 
@@ -128,13 +136,13 @@ router.get("/", verifyToken, async (req, res) => {
     res.status(200).json(orders)
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // get specific order's history
-router.get("/:id", verifyToken, async (req, res) => {
+router.get("/:id", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
     const {id} = req.params
@@ -154,13 +162,13 @@ router.get("/:id", verifyToken, async (req, res) => {
     res.status(200).json(detailedOrder)
 
   } catch(err){
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
 // cancel order
-router.patch("/cancel/:id", verifyToken, async (req, res) => {
+router.patch("/cancel/:id", verifyToken, async (req, res, next) => {
   try{
     const userId = req.user.id
     const {id} = req.params
@@ -182,14 +190,10 @@ router.patch("/cancel/:id", verifyToken, async (req, res) => {
     }
 
   } catch(err){
-    if(err.name === "SequelizeValidationError"){
-      return res.status(400).json({error: err.message})
-    }
-    res.status(500).json({error: err.message})
+    next(err)
   }
 })
 
 
-//  if(order.status === "shipped" || order.status === "delivered")
 
 module.exports = router;
